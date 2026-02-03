@@ -90,31 +90,19 @@ class Model(pl.LightningModule):
             target = torch.zeros(len(gallery), dtype=torch.bool)
             target[np.where(all_category == category)] = True
             
-            # Manual calculation for AP@200 and P@200
-            target = target.cpu()
-            distance = distance.cpu()
+            # Full mAP using torchmetrics
+            ap[idx] = retrieval_average_precision(distance.cpu(), target.cpu())
+
+            # Manual calculation for P@200
             k = min(200, len(distance))
-            
             sorted_indices = torch.argsort(distance, descending=True)[:k]
             top_k_target = target[sorted_indices]
-            
-            # P@200
             p200[idx] = top_k_target.sum().float() / k
-            
-            # AP@200
-            total_relevant = target.sum()
-            if total_relevant > 0:
-                ranks = torch.arange(1, k + 1, dtype=torch.float32)
-                cum_relevant = torch.cumsum(top_k_target.float(), dim=0)
-                precisions = cum_relevant / ranks
-                ap[idx] = precisions[top_k_target].sum() / total_relevant
-            else:
-                ap[idx] = 0.0
 
         mAP = torch.mean(ap)
         P200 = torch.mean(p200)
-        self.log('mAP@200', mAP)
+        self.log('mAP', mAP)
         self.log('P@200', P200)
         if self.global_step > 0:
             self.best_metric = self.best_metric if  (self.best_metric > mAP.item()) else mAP.item()
-        print ('mAP@200: {}, P@200: {}, Best mAP@200: {}'.format(mAP.item(), P200.item(), self.best_metric))
+        print ('mAP: {}, P@200: {}, Best mAP: {}'.format(mAP.item(), P200.item(), self.best_metric))
