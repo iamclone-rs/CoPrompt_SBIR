@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchmetrics.functional import retrieval_average_precision
+from torchmetrics.functional import retrieval_average_precision, retrieval_precision
 import pytorch_lightning as pl
 
 from src.clip import clip
@@ -83,15 +83,19 @@ class Model(pl.LightningModule):
         ## mAP category-level SBIR Metrics
         gallery = gallery_feat_all
         ap = torch.zeros(len(query_feat_all))
+        p200 = torch.zeros(len(query_feat_all))
         for idx, sk_feat in enumerate(query_feat_all):
             category = all_category[idx]
             distance = -1*self.distance_fn(sk_feat.unsqueeze(0), gallery)
             target = torch.zeros(len(gallery), dtype=torch.bool)
             target[np.where(all_category == category)] = True
-            ap[idx] = retrieval_average_precision(distance.cpu(), target.cpu())
+            ap[idx] = retrieval_average_precision(distance.cpu(), target.cpu(), top_k=200)
+            p200[idx] = retrieval_precision(distance.cpu(), target.cpu(), top_k=200)
         
         mAP = torch.mean(ap)
-        self.log('mAP', mAP)
+        P200 = torch.mean(p200)
+        self.log('mAP@200', mAP)
+        self.log('P@200', P200)
         if self.global_step > 0:
             self.best_metric = self.best_metric if  (self.best_metric > mAP.item()) else mAP.item()
-        print ('mAP: {}, Best mAP: {}'.format(mAP.item(), self.best_metric))
+        print ('mAP@200: {}, P@200: {}, Best mAP@200: {}'.format(mAP.item(), P200.item(), self.best_metric))
