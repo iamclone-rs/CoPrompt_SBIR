@@ -37,9 +37,17 @@ class Sketchy(torch.utils.data.Dataset):
         self.transform = transform
         self.return_orig = return_orig
 
-        self.all_categories = os.listdir(os.path.join(self.opts.data_dir, 'sketch'))
-        if '.ipynb_checkpoints' in self.all_categories:
-            self.all_categories.remove('.ipynb_checkpoints')
+        categories_all = os.listdir(os.path.join(self.opts.data_dir, 'sketch'))
+        if '.ipynb_checkpoints' in categories_all:
+            categories_all.remove('.ipynb_checkpoints')
+
+        # Global, stable category mapping across splits (train/val) for classification.
+        self.categories_all = sorted(categories_all)
+        self.category_to_idx = {cat: idx for idx, cat in enumerate(self.categories_all)}
+        self.num_classes = len(self.categories_all)
+
+        # Categories used for sampling in this dataset split.
+        self.all_categories = list(self.categories_all)
             
         if self.opts.data_split > 0:
             np.random.shuffle(self.all_categories)
@@ -67,6 +75,7 @@ class Sketchy(torch.utils.data.Dataset):
         filepath = self.all_sketches_path[index]                
         category = filepath.split(os.path.sep)[-2]
         filename = os.path.basename(filepath)
+        label_idx = self.category_to_idx[category]
         
         neg_classes = self.all_categories.copy()
         neg_classes.remove(category)
@@ -83,11 +92,18 @@ class Sketchy(torch.utils.data.Dataset):
         img_tensor = self.transform(img_data)
         neg_tensor = self.transform(neg_data)
         
+        include_label_idx = float(getattr(self.opts, 'cls_loss_weight', 0.0)) > 0.0
+
         if self.return_orig:
+            if include_label_idx:
+                return (sk_tensor, img_tensor, neg_tensor, category, filename,
+                    sk_data, img_data, neg_data, label_idx)
             return (sk_tensor, img_tensor, neg_tensor, category, filename,
                 sk_data, img_data, neg_data)
-        else:
-            return (sk_tensor, img_tensor, neg_tensor, category, filename)
+
+        if include_label_idx:
+            return (sk_tensor, img_tensor, neg_tensor, category, filename, label_idx)
+        return (sk_tensor, img_tensor, neg_tensor, category, filename)
 
     @staticmethod
     def data_transform(opts):
