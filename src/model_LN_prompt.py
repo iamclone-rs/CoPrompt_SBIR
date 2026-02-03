@@ -34,46 +34,13 @@ class Model(pl.LightningModule):
         self.loss_fn = nn.TripletMarginWithDistanceLoss(
             distance_function=self.distance_fn, margin=0.2)
 
-        # Optional auxiliary classification loss.
-        self.cls_loss_weight = float(getattr(self.opts, 'cls_loss_weight', 0.0))
-        self.ce_loss = nn.CrossEntropyLoss()
-
-        embed_dim = getattr(getattr(self.clip, 'visual', None), 'output_dim', None)
-        if embed_dim is None:
-            embed_dim = int(getattr(getattr(self.clip, 'text_projection', None), 'shape', [None, 0])[1])
-
-        # nclass is often not set correctly via CLI; keep a safe fallback.
-        if not hasattr(self.opts, 'nclass') or int(getattr(self.opts, 'nclass', 0)) <= 0:
-            self.opts.nclass = 1
-
-        self.cls_head = nn.Linear(embed_dim, int(self.opts.nclass))
-
         self.best_metric = -1e3
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam([
             {'params': self.clip.parameters(), 'lr': self.opts.clip_LN_lr},
-            {'params': [self.sk_prompt] + [self.img_prompt], 'lr': self.opts.prompt_lr},
-            {'params': self.cls_head.parameters(), 'lr': self.opts.linear_lr}])
+            {'params': [self.sk_prompt] + [self.img_prompt], 'lr': self.opts.prompt_lr}])
         return optimizer
-
-    def _maybe_get_label_idx(self, batch):
-        # Dataset appends label_idx at the end when cls_loss_weight > 0.
-        if len(batch) < 6:
-            return None
-        label_idx = batch[-1]
-        if isinstance(label_idx, (list, tuple)):
-            label_idx = torch.as_tensor(label_idx, device=self.device)
-        if isinstance(label_idx, torch.Tensor):
-            return label_idx.long().to(self.device)
-        try:
-            return torch.as_tensor(label_idx, device=self.device).long()
-        except Exception:
-            return None
-
-    def _classification_loss(self, feat: torch.Tensor, label_idx: torch.Tensor):
-        logits = self.cls_head(feat.float())
-        return self.ce_loss(logits, label_idx)
 
     def forward(self, data, dtype='image'):
         if dtype == 'image':
@@ -90,21 +57,8 @@ class Model(pl.LightningModule):
         sk_feat = self.forward(sk_tensor, dtype='sketch')
         neg_feat = self.forward(neg_tensor, dtype='image')
 
-        triplet_loss = self.loss_fn(sk_feat, img_feat, neg_feat)
-        loss = triplet_loss
-
-        if self.cls_loss_weight > 0.0:
-            label_idx = self._maybe_get_label_idx(batch)
-            if label_idx is not None:
-                cls_loss = 0.5 * (
-                    self._classification_loss(sk_feat, label_idx)
-                    + self._classification_loss(img_feat, label_idx)
-                )
-                loss = loss + self.cls_loss_weight * cls_loss
-                self.log('train_cls_loss', cls_loss, prog_bar=True)
-
-        self.log('train_triplet_loss', triplet_loss)
-        self.log('train_loss', loss, prog_bar=True)
+        loss = self.loss_fn(sk_feat, img_feat, neg_feat)
+        self.log('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -113,20 +67,7 @@ class Model(pl.LightningModule):
         sk_feat = self.forward(sk_tensor, dtype='sketch')
         neg_feat = self.forward(neg_tensor, dtype='image')
 
-        triplet_loss = self.loss_fn(sk_feat, img_feat, neg_feat)
-        loss = triplet_loss
-
-        if self.cls_loss_weight > 0.0:
-            label_idx = self._maybe_get_label_idx(batch)
-            if label_idx is not None:
-                cls_loss = 0.5 * (
-                    self._classification_loss(sk_feat, label_idx)
-                    + self._classification_loss(img_feat, label_idx)
-                )
-                loss = loss + self.cls_loss_weight * cls_loss
-                self.log('val_cls_loss', cls_loss)
-
-        self.log('val_triplet_loss', triplet_loss)
+        loss = self.loss_fn(sk_feat, img_feat, neg_feat)
         self.log('val_loss', loss)
         return sk_feat, img_feat, category
 

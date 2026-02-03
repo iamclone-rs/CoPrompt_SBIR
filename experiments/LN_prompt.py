@@ -16,10 +16,6 @@ if __name__ == '__main__':
     train_dataset = Sketchy(opts, dataset_transforms, mode='train', return_orig=False)
     val_dataset = Sketchy(opts, dataset_transforms, mode='val', used_cat=train_dataset.all_categories, return_orig=False)
 
-    # If auxiliary classification loss is enabled, align nclass with global category mapping.
-    if float(getattr(opts, 'cls_loss_weight', 0.0)) > 0.0:
-        opts.nclass = train_dataset.num_classes
-
     train_loader = DataLoader(dataset=train_dataset, batch_size=opts.batch_size, num_workers=opts.workers)
     val_loader = DataLoader(dataset=val_dataset, batch_size=opts.batch_size, num_workers=opts.workers)
 

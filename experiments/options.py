@@ -31,11 +31,4 @@ parser.add_argument('--workers', type=int, default=128)
 parser.add_argument('--prompt_dim', type=int, default=768)
 parser.add_argument('--n_prompts', type=int, default=3)
 
-# ----------------------
-# Auxiliary Losses
-# ----------------------
-
-# Set > 0 to add an auxiliary classification loss (CrossEntropy) on top of triplet loss.
-parser.add_argument('--cls_loss_weight', type=float, default=0.0)
-
 opts = parser.parse_args()
