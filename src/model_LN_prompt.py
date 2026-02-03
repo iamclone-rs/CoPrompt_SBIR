@@ -89,9 +89,28 @@ class Model(pl.LightningModule):
             distance = -1*self.distance_fn(sk_feat.unsqueeze(0), gallery)
             target = torch.zeros(len(gallery), dtype=torch.bool)
             target[np.where(all_category == category)] = True
-            ap[idx] = retrieval_average_precision(distance.cpu(), target.cpu(), top_k=200)
-            p200[idx] = retrieval_precision(distance.cpu(), target.cpu(), top_k=200)
-        
+            
+            # Manual calculation for AP@200 and P@200
+            target = target.cpu()
+            distance = distance.cpu()
+            k = min(200, len(distance))
+            
+            sorted_indices = torch.argsort(distance, descending=True)[:k]
+            top_k_target = target[sorted_indices]
+            
+            # P@200
+            p200[idx] = top_k_target.sum().float() / k
+            
+            # AP@200
+            total_relevant = target.sum()
+            if total_relevant > 0:
+                ranks = torch.arange(1, k + 1, dtype=torch.float32)
+                cum_relevant = torch.cumsum(top_k_target.float(), dim=0)
+                precisions = cum_relevant / ranks
+                ap[idx] = precisions[top_k_target].sum() / total_relevant
+            else:
+                ap[idx] = 0.0
+
         mAP = torch.mean(ap)
         P200 = torch.mean(p200)
         self.log('mAP@200', mAP)
